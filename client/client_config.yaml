@@ -1,0 +1,11 @@
+server:
+  address: "10.19.0.168:8081"
+
+node_config:
+  partition-id: 0 
+  num-partitions: 4 
+
+run_config:
+  batch-size: 32
+  local-epochs: 1 
+  learning-rate: 0.1 

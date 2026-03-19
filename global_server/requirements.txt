@@ -1,0 +1,6 @@
+torch==2.2.1+cpu
+torchvision==0.17.1+cpu
+flwr==1.7.0
+numpy
+pyyaml
+flwr_datasets
