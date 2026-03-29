@@ -14,15 +14,25 @@ import csv
 import datetime
 import psutil
 
-try:
-    from jtop import jtop
-    import time
-    jtop_inst = jtop()
-    jtop_inst.start()
-    NVML_AVAILABLE = True
-except Exception as e:
-    print("jtop not available or failed to initialize:", e)
-    NVML_AVAILABLE = False
+
+# Use tegrastats for GPU monitoring in Docker (Jetson)
+import subprocess
+def get_tegrastats_gpu():
+    try:
+        # Run tegrastats once and parse output
+        output = subprocess.check_output(['tegrastats', '--interval', '1000', '--count', '1'], stderr=subprocess.STDOUT, text=True)
+        # Example output: RAM 2048/3964MB (lfb 2x4MB) SWAP 0/1982MB (cached 0MB) CPU [0%@345,off,off,off] EMC_FREQ 0% GR3D_FREQ 0% PLL@32.5C
+        for part in output.split():
+            if part.endswith('GR3D_FREQ'):
+                idx = output.split().index(part)
+                gpu_str = output.split()[idx-1]
+                if gpu_str.endswith('%'):
+                    return int(gpu_str.strip('%'))
+        return None
+    except Exception as e:
+        print(f"tegrastats not available or failed: {e}")
+        return None
+NVML_AVAILABLE = True
 
 
 ongoing_requests = 0
@@ -42,10 +52,9 @@ def log_resource_usage(request_id=None, ongoing=None):
         mem = None
         print(f"[RESOURCE LOG] Memory usage not found: {e}")
     gpu = None
-    if NVML_AVAILABLE:  # This will now check for jtop
+    if NVML_AVAILABLE:
         try:
-            stats = jtop_inst.stats
-            gpu = stats.get('GPU', None)
+            gpu = get_tegrastats_gpu()
             print(f"[RESOURCE LOG] GPU usage found: {gpu}%")
         except Exception as e:
             gpu = None
