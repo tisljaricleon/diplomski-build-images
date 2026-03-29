@@ -15,10 +15,13 @@ import datetime
 import psutil
 
 try:
-    import pynvml
-    pynvml.nvmlInit()
+    from jtop import jtop
+    import time
+    jtop_inst = jtop()
+    jtop_inst.start()
     NVML_AVAILABLE = True
-except ImportError:
+except Exception as e:
+    print("jtop not available or failed to initialize:", e)
     NVML_AVAILABLE = False
 
 
@@ -39,10 +42,10 @@ def log_resource_usage(request_id=None, ongoing=None):
         mem = None
         print(f"[RESOURCE LOG] Memory usage not found: {e}")
     gpu = None
-    if NVML_AVAILABLE:
+    if NVML_AVAILABLE:  # This will now check for jtop
         try:
-            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-            gpu = pynvml.nvmlDeviceGetUtilizationRates(handle).gpu
+            stats = jtop_inst.stats
+            gpu = stats.get('GPU', None)
             print(f"[RESOURCE LOG] GPU usage found: {gpu}%")
         except Exception as e:
             gpu = None

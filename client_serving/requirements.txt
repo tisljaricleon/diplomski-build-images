@@ -3,5 +3,4 @@ uvicorn
 pillow
 pyyaml
 python-multipart
-psutil
-pynvml
+jtop
