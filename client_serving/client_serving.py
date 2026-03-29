@@ -127,6 +127,7 @@ def log_resource_usage(request_id=None, ongoing=None):
             ongoing if ongoing is not None else ''
         ])
 
+
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
