@@ -5,7 +5,7 @@ from flwr.common import ndarrays_to_parameters, parameters_to_ndarrays, Metrics
 from flwr.server.strategy import FedAvg
 import yaml
 from typing import Tuple, Optional
-from task import Net, get_weights, load_data, test, set_weights
+from task import Net, get_weights, load_data, test, set_weights, load_model, save_model
 
 class LogAccuracyStrategy(FedAvg):
     def __init__(self, **kwargs):
@@ -15,8 +15,9 @@ class LogAccuracyStrategy(FedAvg):
             num_partitions=1,
             batch_size=32,
         )
-        self.net = Net()
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        # Load model weights if available
+        self.net = load_model("/home/model/model.pt", self.device)
 
     def evaluate(
         self,
@@ -26,10 +27,10 @@ class LogAccuracyStrategy(FedAvg):
         ndarrays = parameters_to_ndarrays(parameters)
         set_weights(self.net, ndarrays)
         loss, accuracy = test(self.net, self.testloader, self.device)
-
+        # Save model after evaluation
+        save_model(self.net, "/home/model/model.pt")
         print(f"Round {rnd} - Loss: {loss:.4f}, Accuracy: {accuracy:.4f}")
-
-        return loss, {"accuracy": accuracy,"loss":loss}
+        return loss, {"accuracy": accuracy, "loss": loss}
 
 
 if __name__ == "__main__":
