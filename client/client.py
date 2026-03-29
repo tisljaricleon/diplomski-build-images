@@ -16,6 +16,7 @@ local_round = 1
 class FlowerClient(fl.client.NumPyClient):
     def __init__(self, trainloader, valloader, local_epochs, learning_rate, partition_id):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        print(f"[INIT] Using device: {self.device}")
         self.trainloader = trainloader
         self.valloader = valloader
         self.local_epochs = local_epochs
