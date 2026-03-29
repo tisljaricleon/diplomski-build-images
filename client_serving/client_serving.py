@@ -13,10 +13,9 @@ import threading
 import csv
 import datetime
 import psutil
-
-
-# Use tegrastats for GPU monitoring in Docker (Jetson)
 import subprocess
+
+
 def get_tegrastats_stats():
     try:
         output = subprocess.check_output(['tegrastats', '--interval', '1000', '--count', '1'], stderr=subprocess.STDOUT, text=True)
@@ -69,44 +68,30 @@ def get_tegrastats_stats():
     except Exception as e:
         print(f"tegrastats not available or failed: {e}")
         return None
-NVML_AVAILABLE = True
 
 
 ongoing_requests = 0
 ongoing_requests_lock = threading.Lock()
 def log_resource_usage(request_id=None, ongoing=None):
-    process = psutil.Process(os.getpid())
-    try:
-        cpu = process.cpu_percent(interval=0.01)
-        print(f"[RESOURCE LOG] CPU usage found: {cpu}%")
-    except Exception as e:
-        cpu = None
-        print(f"[RESOURCE LOG] CPU usage not found: {e}")
-    try:
-        mem = process.memory_info().rss / (1024 * 1024)  # MB
-        print(f"[RESOURCE LOG] Memory usage found: {mem} MB")
-    except Exception as e:
-        mem = None
-        print(f"[RESOURCE LOG] Memory usage not found: {e}")
     ram = None
     ram_total = None
     swap = None
     swap_total = None
     cpu_cores = None
     gpu = None
-    if NVML_AVAILABLE:
-        try:
-            stats = get_tegrastats_stats()
-            if stats:
-                ram = stats['ram_used']
-                ram_total = stats['ram_total']
-                swap = stats['swap_used']
-                swap_total = stats['swap_total']
-                cpu_cores = stats['cpu_cores']
-                gpu = stats['gpu']
-                print(f"[RESOURCE LOG] (tegrastats) RAM: {ram}/{ram_total} MB, SWAP: {swap}/{swap_total} MB, CPU cores: {cpu_cores}, GPU: {gpu}%")
-        except Exception as e:
-            print(f"[RESOURCE LOG] tegrastats parsing failed: {e}")
+    
+    try:
+        stats = get_tegrastats_stats()
+        if stats:
+            ram = stats['ram_used']
+            ram_total = stats['ram_total']
+            swap = stats['swap_used']
+            swap_total = stats['swap_total']
+            cpu_cores = stats['cpu_cores']
+            gpu = stats['gpu']
+            print(f"[RESOURCE LOG] RAM: {ram}/{ram_total} MB, SWAP: {swap}/{swap_total} MB, CPU cores: {cpu_cores}, GPU: {gpu}%")
+    except Exception as e:
+        print(f"[RESOURCE LOG] tegrastats parsing failed: {e}")
     log_path = "/home/model/resource_log.csv"
     file_exists = os.path.exists(log_path)
     with open(log_path, 'a', newline='') as csvfile:
@@ -164,6 +149,8 @@ def load_model():
         print("[MODEL LOAD] Successfully loaded state_dict into Net")
         model.eval()
         print("[MODEL LOAD] Model set to eval mode")
+        model.to(device)
+        print(f"[MODEL LOAD] Model moved to device: {device}")
         return model
     except Exception as e:
         print(f"[MODEL LOAD ERROR] {e}")
@@ -172,9 +159,6 @@ def load_model():
 cuda_available = torch.cuda.is_available()
 device = torch.device("cuda:0" if cuda_available else "cpu")
 model = load_model()
-if model is not None:
-    model.to(device)
-    print(f"[INIT] Model moved to device: {device}")
 cifar10_transform = transforms.Compose([
     transforms.Resize((32, 32)),
     transforms.ToTensor(),
@@ -185,31 +169,29 @@ cifar10_transform = transforms.Compose([
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
     global model, ongoing_requests
-    request_id = datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")
+
     with ongoing_requests_lock:
         ongoing_requests += 1
         current_ongoing = ongoing_requests
+
     try:
         if model is None:
             model = load_model()
             if model is None:
-                log_resource_usage(request_id, current_ongoing)
+                log_resource_usage(current_ongoing)
                 return JSONResponse({"label": None, "error": "Model not found"}, status_code=200)
+            
         image = Image.open(io.BytesIO(await file.read())).convert("RGB")
         tensor = cifar10_transform(image).unsqueeze(0)
         tensor = tensor.to(device)
         with torch.no_grad():
-            # Print device info for debugging
-            device = next(model.parameters()).device
-            print(f"[INFERENCE] Model is on device: {device}")
-            print(f"[INFERENCE] Input tensor is on device: {tensor.device}")
             output = model(tensor)
             pred = output.argmax(dim=1).item()
-        log_resource_usage(request_id, current_ongoing)
+        log_resource_usage(current_ongoing)
         return JSONResponse({"label": int(pred)})
     except Exception as e:
-        log_resource_usage(request_id, current_ongoing)
-        return JSONResponse({"error": str(e)}, status_code=500)
+        log_resource_usage(current_ongoing)
+        return JSONResponse({ "label": None, "error": str(e)}, status_code=500)
     finally:
         with ongoing_requests_lock:
             ongoing_requests -= 1
@@ -226,4 +208,4 @@ if __name__ == "__main__":
         port = int(port_str)
 
     uvicorn.run(app, host=host, port=port)
-    print(f"Client Server Serving started at {host}:{port}")
+    print(f"Client server serving started at {host}:{port}")
