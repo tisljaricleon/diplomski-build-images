@@ -4,4 +4,3 @@ pillow
 pyyaml
 python-multipart
 jetson-stats
-asyncio

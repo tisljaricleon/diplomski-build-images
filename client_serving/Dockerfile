@@ -1,4 +1,3 @@
-
 FROM nvcr.io/nvidia/pytorch:23.11-py3-igpu
 
 WORKDIR /home
@@ -16,5 +15,4 @@ COPY . /home/
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-ENTRYPOINT ["uvicorn", "client_serving:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
-
+ENTRYPOINT ["python", "client_serving.py"]

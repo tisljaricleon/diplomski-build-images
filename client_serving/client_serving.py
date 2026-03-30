@@ -150,3 +150,16 @@ async def predict(file: UploadFile = File(...)):
         return JSONResponse({"label": int(prediction)})
     except Exception as e:
         return JSONResponse({ "label": None, "error": str(e)}, status_code=500)
+
+
+if __name__ == "__main__":
+    with open("client_serving_config.yaml", "r") as f:
+        config = yaml.safe_load(f)
+
+    address = config.get("server", {}).get("address", "0.0.0.0:8000")
+    if ":" in address:
+        host, port_str = address.rsplit(":", 1)
+        port = int(port_str)
+
+    uvicorn.run(app, host=host, port=port)
+    print(f"Client serving started at {host}:{port}")
