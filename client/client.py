@@ -88,7 +88,3 @@ if __name__ == "__main__":
 
 
 
-    #ne trenira se nista -> salje se request na inference, razliciti request rateovi, prati latency, zauzetost gpu (duzi period request rateova)
-
-
-
