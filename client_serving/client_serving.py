@@ -72,6 +72,8 @@ def log_resource_usage():
             writer.writerow(row)
         time.sleep(0.5)
 
+
+
 threading.Thread(target=monitor_jtop, daemon=True).start()
 threading.Thread(target=log_resource_usage, daemon=True).start()
 
@@ -127,7 +129,7 @@ def load_model():
 model = load_model()
 
 
-# Prediction endpoint
+# Prediction endpoint [fix]
 def inference(tensor):
     with torch.no_grad():
         output = model(tensor)
@@ -161,5 +163,5 @@ if __name__ == "__main__":
         host, port_str = address.rsplit(":", 1)
         port = int(port_str)
 
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run(app, host=host, port=port) # async
     print(f"Client serving started at {host}:{port}")
