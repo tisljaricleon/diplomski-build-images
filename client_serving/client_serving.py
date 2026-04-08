@@ -16,7 +16,6 @@ from jtop import jtop
 import asyncio
 import time
 
-# Jtop stats monitoring & logging
 latest_stats = {}
 def monitor_jtop():
     try:
@@ -72,13 +71,11 @@ def log_resource_usage():
             writer.writerow(row)
         time.sleep(0.5)
 
-
-
 threading.Thread(target=monitor_jtop, daemon=True).start()
 threading.Thread(target=log_resource_usage, daemon=True).start()
 
 
-# Defining device, transforms, Net
+
 cuda_available = torch.cuda.is_available()
 device = torch.device("cuda:0" if cuda_available else "cpu")
 cifar10_transform = transforms.Compose([
@@ -129,7 +126,7 @@ def load_model():
 model = load_model()
 
 
-# Prediction endpoint [fix]
+# Prediction endpoint
 def inference(tensor):
     with torch.no_grad():
         output = model(tensor)
@@ -152,16 +149,3 @@ async def predict(file: UploadFile = File(...)):
         return JSONResponse({"label": int(prediction)})
     except Exception as e:
         return JSONResponse({ "label": None, "error": str(e)}, status_code=500)
-
-
-if __name__ == "__main__":
-    with open("client_serving_config.yaml", "r") as f:
-        config = yaml.safe_load(f)
-
-    address = config.get("server", {}).get("address", "0.0.0.0:8000")
-    if ":" in address:
-        host, port_str = address.rsplit(":", 1)
-        port = int(port_str)
-
-    uvicorn.run(app, host=host, port=port) # async
-    print(f"Client serving started at {host}:{port}")

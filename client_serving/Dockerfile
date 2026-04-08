@@ -15,4 +15,4 @@ COPY . /home/
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-ENTRYPOINT ["python", "client_serving.py"]
+ENTRYPOINT ["uvicorn", "client_serving:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "3"]
