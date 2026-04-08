@@ -132,6 +132,7 @@ async def predict(file: UploadFile = File(...)):
         image = Image.open(io.BytesIO(await file.read())).convert("RGB")
         tensor = cifar10_transform(image).unsqueeze(0)
         tensor = tensor.to(device)
+        print(f"[DEBUG] Model device: {next(model.parameters()).device}, Tensor device: {tensor.device}")
         with torch.no_grad():
             output = model(tensor)
             pred = output.argmax(dim=1).item()

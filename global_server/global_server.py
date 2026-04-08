@@ -7,6 +7,7 @@ import yaml
 from typing import Tuple, Optional
 from task import Net, get_weights, load_data, test, set_weights, load_model, save_model
 
+
 class LogAccuracyStrategy(FedAvg):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -16,7 +17,6 @@ class LogAccuracyStrategy(FedAvg):
             batch_size=32,
         )
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        # Load model weights if available
         self.net = load_model("/home/model/model.pt", self.device)
 
     def evaluate(
@@ -27,7 +27,6 @@ class LogAccuracyStrategy(FedAvg):
         ndarrays = parameters_to_ndarrays(parameters)
         set_weights(self.net, ndarrays)
         loss, accuracy = test(self.net, self.testloader, self.device)
-        # Save model after evaluation
         save_model(self.net, "/home/model/model.pt")
         print(f"Round {rnd} - Loss: {loss:.4f}, Accuracy: {accuracy:.4f}")
         return loss, {"accuracy": accuracy, "loss": loss}
@@ -41,14 +40,12 @@ if __name__ == "__main__":
     server_cfg = config["server"]
     strategy_cfg = config["strategy"]
 
-    # Read from config
     num_rounds = server_cfg["global_rounds"]
 
-    # Initialize model parameters
-    ndarrays = get_weights(Net())
+    pretrained_model = load_model("/home/model/model.pt", torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+    ndarrays = get_weights(pretrained_model)
     parameters = ndarrays_to_parameters(ndarrays)
 
-    # Build strategy params dynamically
     strategy = LogAccuracyStrategy(
         fraction_fit=strategy_cfg["fraction_fit"],
         fraction_evaluate=strategy_cfg["fraction_evaluate"],
@@ -58,7 +55,6 @@ if __name__ == "__main__":
         initial_parameters=parameters,
     )
 
-    # Start Flower server
     fl.server.start_server(
         server_address=server_cfg["address"],
         config=fl.server.ServerConfig(num_rounds=server_cfg["global_rounds"]),

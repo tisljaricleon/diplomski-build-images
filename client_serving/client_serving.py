@@ -1,4 +1,3 @@
-import uvicorn
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import JSONResponse
 from PIL import Image
@@ -15,6 +14,9 @@ import datetime
 from jtop import jtop
 import asyncio
 import time
+from typing import List
+import datetime
+
 
 latest_stats = {}
 def monitor_jtop():
@@ -125,34 +127,47 @@ def load_model():
 
 model = load_model()
 
+LABEL_NAMES = [
+    "airplane", "automobile", "bird", "cat", "deer",
+    "dog", "frog", "horse", "ship", "truck"
+]
 
-# Prediction endpoint
 def inference(tensor):
     with torch.no_grad():
         output = model(tensor)
-        return output.argmax(dim=1).item()
+        preds = output.argmax(dim=1)
+        return preds.cpu().numpy(), output.cpu().numpy()
 
 
 app = FastAPI()          
 @app.post("/predict")
-async def predict(file: UploadFile = File(...)):
-    import datetime
+async def predict(files: List[UploadFile] = File(...)):
     global model
     try:
         if model is None:
             model = load_model()
             if model is None:
-                return JSONResponse({"label": None, "error": "Model not found"}, status_code=404)
-        image = Image.open(io.BytesIO(await file.read())).convert("RGB")
-        tensor = cifar10_transform(image).unsqueeze(0)
-        tensor = tensor.to(device)
+                return JSONResponse({"labels": None, "error": "Model not found"}, status_code=404)
+        images = []
+        for file in files:
+            image = Image.open(io.BytesIO(await file.read())).convert("RGB")
+            tensor = cifar10_transform(image)
+            images.append(tensor)
+        batch_tensor = torch.stack(images).to(device)
+        print(f"[DEBUG] Model device: {next(model.parameters()).device}, Tensor device: {batch_tensor.device}")
         start_time = time.time()
         print(f"[TIMING] Inference start: {datetime.datetime.now().isoformat()}")
-        # Artificial delay
-        time.sleep(1)
-        prediction = await asyncio.to_thread(inference, tensor)
+        preds, logits = await asyncio.to_thread(inference, batch_tensor)
         end_time = time.time()
         print(f"[TIMING] Inference end: {datetime.datetime.now().isoformat()} | Duration: {end_time - start_time:.4f} seconds")
-        return JSONResponse({"label": int(prediction)})
+        results = []
+        for idx in range(len(preds)):
+            label_idx = int(preds[idx])
+            label_name = LABEL_NAMES[label_idx]
+            results.append({
+                "label_index": label_idx,
+                "label_name": label_name
+            })
+        return JSONResponse({"results": results, "accuracy": None})
     except Exception as e:
-        return JSONResponse({ "label": None, "error": str(e)}, status_code=500)
+        return JSONResponse({ "labels": None, "error": str(e)}, status_code=500)
