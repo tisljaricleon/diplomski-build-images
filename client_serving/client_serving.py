@@ -136,6 +136,7 @@ def inference(tensor):
 app = FastAPI()          
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
+    import datetime
     global model
     try:
         if model is None:
@@ -145,7 +146,13 @@ async def predict(file: UploadFile = File(...)):
         image = Image.open(io.BytesIO(await file.read())).convert("RGB")
         tensor = cifar10_transform(image).unsqueeze(0)
         tensor = tensor.to(device)
+        start_time = time.time()
+        print(f"[TIMING] Inference start: {datetime.datetime.now().isoformat()}")
+        # Artificial delay
+        time.sleep(1)
         prediction = await asyncio.to_thread(inference, tensor)
+        end_time = time.time()
+        print(f"[TIMING] Inference end: {datetime.datetime.now().isoformat()} | Duration: {end_time - start_time:.4f} seconds")
         return JSONResponse({"label": int(prediction)})
     except Exception as e:
         return JSONResponse({ "label": None, "error": str(e)}, status_code=500)
