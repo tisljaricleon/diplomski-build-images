@@ -4,3 +4,4 @@ flwr==1.7.0
 numpy
 pyyaml
 flwr_datasets
+pillow
