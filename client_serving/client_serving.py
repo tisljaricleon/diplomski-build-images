@@ -137,19 +137,6 @@ def load_model():
         return None
 
 
-def wait_for_free_gpu(min_free_bytes, timeout=10):
-    if not torch.cuda.is_available():
-        return True
-    
-    start = time.time()
-    while time.time() - start < timeout:
-        free = torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated(0)
-        if free > min_free_bytes:
-            return True
-        time.sleep(0.05)
-    return False
-
-
 model = load_model()
 
 LABEL_NAMES = [
@@ -183,10 +170,6 @@ async def predict(files: List[UploadFile] = File(...)):
             images.append(tensor)
         batch_tensor = torch.stack(images).to(device)
 
-        min_free_bytes = batch_tensor.element_size() * batch_tensor.nelement() * 2
-        if not wait_for_free_gpu(min_free_bytes):
-            print("[PREDICT] Not enough free GPU memory")
-            return JSONResponse({"results": None, "error": "Server busy, not enough GPU memory"}, status_code=503)
 
         mem_before = torch.cuda.memory_allocated() if torch.cuda.is_available() else 0
         mem_max_before = torch.cuda.max_memory_allocated() if torch.cuda.is_available() else 0
