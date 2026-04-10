@@ -16,7 +16,7 @@ This folder contains an example setup for running PyTorch with NVIDIA MPS in a D
    docker run --rm my-mps-test
    docker run --rm my-mps-test
 
-   docker run --rm --gpus all -e CUDA_MPS_ACTIVE_THREAD_PERCENTAGE=50 my-mps-test
+   sudo docker run --rm --gpus all -e CUDA_MPS_ACTIVE_THREAD_PERCENTAGE=50 my-mps-test
    docker run --rm --gpus all -e CUDA_MPS_ACTIVE_THREAD_PERCENTAGE=50 my-mps-test
    ```
 

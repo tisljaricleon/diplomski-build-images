@@ -1,4 +1,4 @@
-import uvicorn
+import traceback
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import JSONResponse
 from PIL import Image
@@ -12,54 +12,80 @@ import torch.nn.functional as F
 import threading
 import csv
 import datetime
+from jtop import jtop
+import asyncio
+import time
+from typing import List
+import datetime
+
+latest_stats = {}
+def monitor_jtop():
+    try:
+        with jtop() as jetson:
+            while jetson.ok():
+                latest_stats.update(jetson.stats)
+    except Exception as e:
+        print(f"[JTOP MONITOR] Error: {e}")
 
 
-try:
-    from jtop import jtop
-    JTOP_AVAILABLE = True
-except ImportError:
-    JTOP_AVAILABLE = False
-
-
-ongoing_requests = 0
-ongoing_requests_lock = threading.Lock()
-def log_resource_usage(ongoing=None):
-    jtop_stats = None
-    if JTOP_AVAILABLE:
-        try:
-            with jtop() as jetson:
-                if jetson.ok():
-                    stats = jetson.stats
-                    print(f"[RESOURCE LOG] Stats: {stats}")
-                    jtop_stats = {
-                        'cpu': stats.get('CPU'),
-                        'gpu': stats.get('GPU'),
-                        'ram': stats.get('RAM'),
-                        'temp': stats.get('Temp'),
-                        'power': stats.get('Power'),
-                        'fan': stats.get('FAN'),
-                        'disk': stats.get('Disk'),
-                    }
-                    print(f"[JTOP LOG] {jtop_stats}")
-        except Exception as e:
-            print(f"[RESOURCE LOG] jtop error: {e}")
-    else:
-        print("[RESOURCE LOG] jtop not available")
-
+def log_resource_usage():
+    stat_fields = [
+        'timestamp', 'cpu1', 'cpu2', 'cpu3', 'cpu4', 'cpu5', 'cpu6', 'gpu','gpu_allocated_mem', 'ram', 'swap',
+        'fan', 'temp_cpu', 'temp_gpu', 'temp_soc0', 'temp_soc1', 'temp_soc2', 'temp_therm_junction',
+        'power_vdd_cpu_gpu_cv', 'power_vdd_soc', 'power_tot', 'jetson_clocks', 'nvp_model',
+    ]
     log_path = "/home/model/resource_log.csv"
-    file_exists = os.path.exists(log_path)
-    with open(log_path, 'a', newline='') as csvfile:
-        writer = csv.writer(csvfile)
-        if not file_exists:
-            writer.writerow([
-                "timestamp", "ongoing_requests", "jtop_stats"
-            ])
-        writer.writerow([
-            datetime.datetime.now().isoformat(),
-            ongoing if ongoing is not None else '',
-            jtop_stats if jtop_stats is not None else ''
-        ])
 
+    if os.path.exists(log_path):
+        with open(log_path, 'w', newline='') as file:
+            pass
+
+    while True:
+        row = [
+            datetime.datetime.now().isoformat(),
+            latest_stats.get('CPU1', ''),
+            latest_stats.get('CPU2', ''),
+            latest_stats.get('CPU3', ''),
+            latest_stats.get('CPU4', ''),
+            latest_stats.get('CPU5', ''),
+            latest_stats.get('CPU6', ''),
+            latest_stats.get('GPU', ''),
+            torch.cuda.memory_allocated() if torch.cuda.is_available() else '',
+            latest_stats.get('RAM', ''),
+            latest_stats.get('SWAP', ''),
+            latest_stats.get('Fan pwmfan0', ''),
+            latest_stats.get('Temp cpu', ''),
+            latest_stats.get('Temp gpu', ''),
+            latest_stats.get('Temp soc0', ''),
+            latest_stats.get('Temp soc1', ''),
+            latest_stats.get('Temp soc2', ''),
+            latest_stats.get('Temp tj', ''),
+            latest_stats.get('Power VDD_CPU_GPU_CV', ''),
+            latest_stats.get('Power VDD_SOC', ''),
+            latest_stats.get('Power TOT', ''),
+            latest_stats.get('jetson_clocks', ''),
+            latest_stats.get('nvp model', ''),
+        ]
+        file_exists = os.path.exists(log_path)
+        with open(log_path, 'a', newline='') as file:
+            writer = csv.writer(file)
+            if not file_exists:
+                writer.writerow(stat_fields)
+            writer.writerow(row)
+        time.sleep(0.25)
+
+threading.Thread(target=monitor_jtop, daemon=True).start()
+threading.Thread(target=log_resource_usage, daemon=True).start()
+
+
+
+cuda_available = torch.cuda.is_available()
+device = torch.device("cuda:0" if cuda_available else "cpu")
+cifar10_transform = transforms.Compose([
+    transforms.Resize((32, 32)),
+    transforms.ToTensor(),
+    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+])
 
 class Net(nn.Module):
     def __init__(self):
@@ -79,13 +105,9 @@ class Net(nn.Module):
         x = F.relu(self.fc2(x))
         return self.fc3(x)
 
-app = FastAPI()
-
-def get_model_path():
-    return f"/home/model/model.pt"
 
 def load_model():
-    model_path = get_model_path()
+    model_path = "/home/model/model.pt"
     if not os.path.exists(model_path):
         return None
     try:
@@ -94,66 +116,93 @@ def load_model():
         print(f"[MODEL LOAD] Loaded object type: {type(state_dict)}")
         model = Net()
         model.load_state_dict(state_dict)
-        print("[MODEL LOAD] Successfully loaded state_dict into Net")
         model.eval()
-        print("[MODEL LOAD] Model set to eval mode")
         model.to(device)
         print(f"[MODEL LOAD] Model moved to device: {device}")
         return model
     except Exception as e:
-        print(f"[MODEL LOAD ERROR] {e}")
+        print(f"[MODEL LOAD] Error: {e}")
         return None
 
-cuda_available = torch.cuda.is_available()
-device = torch.device("cuda:0" if cuda_available else "cpu")
+
+def wait_for_free_gpu(min_free_bytes, timeout=10):
+    if not torch.cuda.is_available():
+        return True
+    
+    start = time.time()
+    while time.time() - start < timeout:
+        free = torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated(0)
+        if free > min_free_bytes:
+            return True
+        time.sleep(0.05)
+    return False
+
+
 model = load_model()
-cifar10_transform = transforms.Compose([
-    transforms.Resize((32, 32)),
-    transforms.ToTensor(),
-    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-])
+
+LABEL_NAMES = [
+    "airplane", "automobile", "bird", "cat", "deer",
+    "dog", "frog", "horse", "ship", "truck"
+]
+
+def inference(tensor):
+    with torch.no_grad():
+        output = model(tensor)
+        preds = output.argmax(dim=1)
+        return preds.cpu().numpy(), output.cpu().numpy()
 
 
+app = FastAPI()
 @app.post("/predict")
-async def predict(file: UploadFile = File(...)):
-    global model, ongoing_requests
-
-    with ongoing_requests_lock:
-        ongoing_requests += 1
-        current_ongoing = ongoing_requests
-
+async def predict(files: List[UploadFile] = File(...)):
+    global model
     try:
         if model is None:
             model = load_model()
-            if model is None:
-                log_resource_usage(current_ongoing)
-                return JSONResponse({"label": None, "error": "Model not found"}, status_code=200)
-            
-        image = Image.open(io.BytesIO(await file.read())).convert("RGB")
-        tensor = cifar10_transform(image).unsqueeze(0)
-        tensor = tensor.to(device)
-        with torch.no_grad():
-            output = model(tensor)
-            pred = output.argmax(dim=1).item()
-        log_resource_usage(current_ongoing)
-        return JSONResponse({"label": int(pred)})
+        if model is None:
+            print("[PREDICT] Model not found")
+            return JSONResponse({"results": None, "error": "Model not found"}, status_code=404)
+        
+        images = []
+        for file in files:
+            image = Image.open(io.BytesIO(await file.read())).convert("RGB")
+            tensor = cifar10_transform(image)
+            images.append(tensor)
+        batch_tensor = torch.stack(images).to(device)
+
+        min_free_bytes = batch_tensor.element_size() * batch_tensor.nelement() * 2
+        if not wait_for_free_gpu(min_free_bytes):
+            print("[PREDICT] Not enough free GPU memory")
+            return JSONResponse({"results": None, "error": "Server busy, not enough GPU memory"}, status_code=503)
+
+        start_time = time.time()
+        print(f"[PREDICT] Inference start: {datetime.datetime.now().isoformat()}")
+        preds, logits = await asyncio.to_thread(inference, batch_tensor)
+        end_time = time.time()
+        print(f"[PREDICT] Inference end: {datetime.datetime.now().isoformat()}, duration: {end_time - start_time:.4f} seconds")
+
+
+        probs = torch.nn.functional.softmax(torch.from_numpy(logits), dim=1).numpy()
+        results = []
+        for idx in range(len(preds)):
+            label_idx = int(preds[idx])
+            label_name = LABEL_NAMES[label_idx]
+            confidence = float(probs[idx][label_idx])
+            results.append({
+                "label_index": label_idx,
+                "label_name": label_name,
+                "confidence": confidence
+            })
+        return JSONResponse({"results": results}, status_code=200)
+    
     except Exception as e:
-        log_resource_usage(current_ongoing)
-        return JSONResponse({ "label": None, "error": str(e)}, status_code=500)
-    finally:
-        with ongoing_requests_lock:
-            ongoing_requests -= 1
+        print(f"[PREDICT] {e}")
+        traceback.print_exc()
+        return JSONResponse({ "results": None, "error": str(e)}, status_code=500)
 
 
-if __name__ == "__main__":
-    with open("client_serving_config.yaml", "r") as f:
-        config = yaml.safe_load(f)
-
-    address = config.get("server", {}).get("address", "0.0.0.0:8000")
-
-    if ":" in address:
-        host, port_str = address.rsplit(":", 1)
-        port = int(port_str)
-
-    uvicorn.run(app, host=host, port=port)
-    print(f"Client server serving started at {host}:{port}")
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    print(f"[GLOBAL EXCEPTION] {exc}")
+    traceback.print_exc()
+    return JSONResponse({"results": None, "error": str(exc)}, status_code=500)
