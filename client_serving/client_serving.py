@@ -90,6 +90,7 @@ threading.Thread(target=monitor_jtop, daemon=True).start()
 threading.Thread(target=log_resource_usage, daemon=True).start()
 
 
+# 
 
 cuda_available = torch.cuda.is_available()
 device = torch.device("cuda:0" if cuda_available else "cpu")
@@ -170,6 +171,7 @@ async def predict(files: List[UploadFile] = File(...)):
             images.append(tensor)
         batch_tensor = torch.stack(images).to(device)
 
+#""
 
         mem_before = torch.cuda.memory_allocated() if torch.cuda.is_available() else 0
         mem_max_before = torch.cuda.max_memory_allocated() if torch.cuda.is_available() else 0
