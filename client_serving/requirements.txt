@@ -3,4 +3,3 @@ uvicorn
 pillow
 pyyaml
 python-multipart
-jetson-stats
